@@ -1,0 +1,198 @@
+{ pkgs ? import <nixpkgs> { }, lib, appName, config, package, ... }:
+with lib;
+let
+  cfg = config.services.${appName};
+  releaseName = env: "${appName}_${env}";
+  workingDirectory = env: "/home/${releaseName env}";
+  applyConfig = function:
+    mkMerge
+    (mapAttrsToList (env: envConfig: function env envConfig) cfg.environments);
+
+  nginxHosts = env: envConfig:
+    let
+      port = toString envConfig.port;
+      host = toString envConfig.host;
+    in {
+      enable = true;
+      recommendedProxySettings = true;
+      recommendedTlsSettings = true;
+      recommendedOptimisation = true;
+      recommendedGzipSettings = true;
+      virtualHosts = {
+        "${host}" = {
+          addSSL = envConfig.ssl;
+          enableACME = envConfig.ssl;
+          locations = {
+            "/" = {
+              proxyPass = "http://0.0.0.0:${port}";
+              recommendedProxySettings = true;
+              proxyWebsockets = true;
+            };
+            "/uploads/" = { alias = "${workingDirectory env}/uploads/"; };
+          };
+        };
+      };
+    };
+
+  postgresDatabases = env: envConfig: {
+    enable = true;
+    ensureDatabases = [ (releaseName env) ];
+    ensureUsers = [{
+      name = (releaseName env);
+      ensureDBOwnership = true;
+    }];
+  };
+  tmpFiles = env: envConfig:
+    [ "d ${workingDirectory env}/uploads 0755 ${(releaseName env)} uploads -" ];
+
+  users = env: envConfig: {
+    "${(releaseName env)}" = {
+      isNormalUser = true;
+      home = workingDirectory env;
+      extraGroups = [ "uploads" ];
+      homeMode = "755";
+    };
+  };
+
+  serviceDescription = env: envConfig:
+    let
+      port = toString envConfig.port;
+      releaseTmp = "RELEASE_TMP='${workingDirectory env}'";
+      workDir = workingDirectory env;
+      seedFlagPath = "${workDir}/${envReleaseName}/seed.done";
+      PhoenixService =  "${envReleaseName}.service";
+      seedService = "${envReleaseName}_seed.service";
+      migrationService =  "${envReleaseName}_migration";
+      path = [ pkgs.bash ] ++ (envConfig.runtimePackages != [] && envConfig.runtimePackages || cfg.runtimePackages );
+      release = pkgs.callPackage package {
+
+        commit = envConfig.commit;
+        port = port;
+        env = env;
+      };
+    in {
+      "${migrationService}" = {
+        inherit path;
+        unitConfig = {
+          Description = "${release.pname} ${env} migrator";
+          PartOf = [PhoenixService];
+          Requires = [ seedService ];
+          After = [ seedService];
+        };
+        serviceConfig = {
+          ExecStart = ''
+            ${release}/bin/${envReleaseName} eval "${envConfig.migrationCommand}"
+          '';
+          User = envReleaseName;
+          Group = "users";
+          Type = "oneshot";
+          WorkingDirectory = workDir;
+          Environment = [ releaseTmp ];
+        };
+      };
+      "${seedService}" = {
+        inherit path;
+        before = [migrationService PhoenixService];
+        unitConfig = {
+          ConditionPathExists = "!${seedFlagPath}";
+          Description = "${release.pname} ${env} seeder";
+        };
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          User = envReleaseName;
+          Group = "users";
+          ExecStart = ''
+            ${release}/bin/${envReleaseName} eval "${envConfig.seedCommand}"
+            touch ${seedFlagPath}
+          '';
+          WorkingDirectory = workDir;
+          Environment = [ releaseTmp ];
+        };
+      };
+
+      "${PhoenixService}" = {
+        inherit path;
+        wantedBy = [ "multi-user.target" ];
+        # enable = true;
+        # note that if you are connecting to a postgres instance on a different host
+        # postgresql.service should not be included in the requires.
+        # Unit.Requires = [ "network-online.target" "postgresql.service" ];
+        unitConfig = {
+          Description = "${release.pname} ${env}";
+          # equires bash
+          Requires = [ seedService migrationService ];
+          After = [ seedService migrationService ];
+          StartLimitInterval = 10;
+        };
+        serviceConfig = {
+          Type = "exec";
+          ExecStart = "${release}/bin/${envReleaseName} start";
+          ExecStop = "${release}/bin/${envReleaseName} stop";
+          ExecReload = "${release}/bin/${envReleaseName} reload";
+          User = envReleaseName;
+          Group = "users";
+          Restart = "on-failure";
+          RestartSec = 5;
+          StartLimitBurst = 3;
+          WorkingDirectory = workDir;
+          Environment = [
+            "PORT=${port}"
+            "SECRET_KEY_BASE=${secretKeyBase}"
+            releaseTmp
+            "RELEASE_COOKIE=${releaseCookie}"
+          ];
+        };
+      };
+    };
+in {
+  options = appName:
+    with types; {
+      enable = mkEnableOption "${release.pname} service";
+      runtimePackages = mkOption {
+        type = list;
+        default = [];
+        description = "The list of packages to include in the service"; 
+      };
+      seedCommand = mkOption {
+        type = str;
+        default = "${appName}.Release.seed";
+        description = "The command to run when seeding the database";
+      };
+      migrationCommand = mkOption {
+        type = str;
+        default = "${appName}.Release.migrate";
+        description = "The command to run when migrating the database";
+      };
+      environments = mkOption {
+        type = attrsOf (submodule {
+          options = {
+            inherit seedCommand migrationCommand runtimePackages;
+            port = mkOption {
+              type = port;
+              default = 4000;
+              description = "The port on which this service will listen";
+            };
+            ssl = mkEnableOption "Whether to use SSL or not";
+            host = mkOption {
+              type = str;
+              description = "The host for this environment";
+            };
+            branch = mkOption {
+              type = str;
+              description = "The branch to use for this environment, will default to the environment name";
+            };
+            commit = mkOption {
+              type = str;
+              description = "The commit to deploy for this environment";
+            };
+          };
+        });
+      };
+    };
+  services = applyConfig serviceDescription;
+  rules = applyConfig tmpFiles;
+  users = applyConfig users;
+  nginx = applyConfig nginxHosts;
+  postgresql = applyConfig postgresDatabases;
+}
