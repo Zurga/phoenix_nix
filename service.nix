@@ -1,6 +1,6 @@
 { config, lib, ... }:
 let
-  appName = "YourApp";
+  appName = "phoenixTest";
   # cfg = config.services."${appName}";
   phoenixService = import ./phoenix.nix {
     inherit lib config appName;

@@ -59,13 +59,16 @@ let
       port = toString envConfig.port;
       releaseTmp = "RELEASE_TMP='${workingDirectory env}'";
       workDir = workingDirectory env;
+      envReleaseName = releaseName env;
       seedFlagPath = "${workDir}/${envReleaseName}/seed.done";
       PhoenixService =  "${envReleaseName}.service";
       seedService = "${envReleaseName}_seed.service";
-      migrationService =  "${envReleaseName}_migration";
-      path = [ pkgs.bash ] ++ (envConfig.runtimePackages != [] && envConfig.runtimePackages || cfg.runtimePackages );
+      migrationService =  "${envReleaseName}_migration.service";
+      path = [ pkgs.bash ] ++ (if envConfig.runtimePackages != [] then envConfig.runtimePackages else cfg.runtimePackages );
       release = pkgs.callPackage package {
-
+        inherit lib;
+        branch = env;
+        appName = envReleaseName;
         commit = envConfig.commit;
         port = port;
         env = env;
@@ -81,7 +84,7 @@ let
         };
         serviceConfig = {
           ExecStart = ''
-            ${release}/bin/${envReleaseName} eval "${envConfig.migrationCommand}"
+            ${release}/bin/${envReleaseName} eval "${envConfig.migrateCommand}"
           '';
           User = envReleaseName;
           Group = "users";
@@ -138,36 +141,37 @@ let
           WorkingDirectory = workDir;
           Environment = [
             "PORT=${port}"
-            "SECRET_KEY_BASE=${secretKeyBase}"
+            "SECRET_KEY_BASE=${envConfig.secretKeyBase}"
             releaseTmp
-            "RELEASE_COOKIE=${releaseCookie}"
+            "RELEASE_COOKIE=${envConfig.releaseCookie}"
           ];
         };
       };
     };
+runtimePackages = mkOption {
+  type = types.listOf types.package;
+  default = [];
+  description = "The list of packages to include in the service"; 
+};
+seedCommand = mkOption {
+  type = types.str;
+  default = "${appName}.Release.seed";
+  description = "The command to run when seeding the database";
+};
+migrateCommand = mkOption {
+  type = types.str;
+  default = "${appName}.Release.migrate";
+  description = "The command to run when migrating the database";
+};
 in {
   options = appName:
     with types; {
+      inherit seedCommand migrateCommand runtimePackages;
       enable = mkEnableOption "${release.pname} service";
-      runtimePackages = mkOption {
-        type = list;
-        default = [];
-        description = "The list of packages to include in the service"; 
-      };
-      seedCommand = mkOption {
-        type = str;
-        default = "${appName}.Release.seed";
-        description = "The command to run when seeding the database";
-      };
-      migrationCommand = mkOption {
-        type = str;
-        default = "${appName}.Release.migrate";
-        description = "The command to run when migrating the database";
-      };
       environments = mkOption {
         type = attrsOf (submodule {
           options = {
-            inherit seedCommand migrationCommand runtimePackages;
+            inherit seedCommand migrateCommand runtimePackages;
             port = mkOption {
               type = port;
               default = 4000;
@@ -184,7 +188,18 @@ in {
             };
             commit = mkOption {
               type = str;
+              default = "";
               description = "The commit to deploy for this environment";
+            };
+            secretKeyBase = mkOption {
+              type = str;
+              default = "YOUR_SUPER_SECRET_KEYBASE_THAT_YOU_SHOULD_CHANGE";
+              description = "Secret keybase to use with Phoenix";
+            };
+            releaseCookie = mkOption {
+              type = str;
+              default = "YOUR_SUPER_SECRET_COOKIE_THAT_YOU_SHOULD_CHANGE";
+              description = "Release cookie to use with Phoenix";
             };
           };
         });
