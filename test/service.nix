@@ -1,10 +1,10 @@
 { config, lib, ... }:
 let
-  appName = "phoenixTest";
+  appName = "phoenix_test";
 
-  phoenixService = import ./phoenix.nix {
+  phoenixService = import ../phoenix.nix {
     inherit lib config appName;
-    package = ./default.nix;
+    package = ./phoenix_test/default.nix;
   };
 in {
   options.services."${appName}" = phoenixService.options appName;

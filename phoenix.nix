@@ -60,11 +60,18 @@ let
       releaseTmp = "RELEASE_TMP='${workingDirectory env}'";
       workDir = workingDirectory env;
       envReleaseName = releaseName env;
-      seedFlagPath = "${workDir}/${envReleaseName}/seed.done";
+      seedFlagPath = "${workDir}/seed.done";
       PhoenixService =  "${envReleaseName}.service";
       seedService = "${envReleaseName}_seed.service";
       migrationService =  "${envReleaseName}_migration.service";
       path = [ pkgs.bash ] ++ (if envConfig.runtimePackages != [] then envConfig.runtimePackages else cfg.runtimePackages );
+      environment = [
+        "DATABASE=${envReleaseName}"
+        "PORT=${port}"
+        "SECRET_KEY_BASE=${envConfig.secretKeyBase}"
+        releaseTmp
+        "RELEASE_COOKIE=${envConfig.releaseCookie}"
+      ];
       release = pkgs.callPackage package {
         inherit lib;
         branch = env;
@@ -74,26 +81,26 @@ let
         env = env;
       };
     in {
-      "${migrationService}" = {
+      "${envReleaseName}_migration" = {
         inherit path;
         unitConfig = {
           Description = "${release.pname} ${env} migrator";
           PartOf = [PhoenixService];
-          Requires = [ seedService ];
-          After = [ seedService];
+          Requires = ["postgresql.service"  seedService ];
+          After = ["postgresql.service"  seedService];
         };
         serviceConfig = {
           ExecStart = ''
-            ${release}/bin/${envReleaseName} eval "${envConfig.migrateCommand}"
+            ${release}/bin/${appName} eval "${envConfig.migrateCommand}"
           '';
           User = envReleaseName;
           Group = "users";
           Type = "oneshot";
           WorkingDirectory = workDir;
-          Environment = [ releaseTmp ];
+          Environment = environment;
         };
       };
-      "${seedService}" = {
+      "${envReleaseName}_seed" = {
         inherit path;
         before = [migrationService PhoenixService];
         unitConfig = {
@@ -106,15 +113,14 @@ let
           User = envReleaseName;
           Group = "users";
           ExecStart = ''
-            ${release}/bin/${envReleaseName} eval "${envConfig.seedCommand}"
-            touch ${seedFlagPath}
+            ${release}/bin/${appName} eval "${envConfig.seedCommand}"; touch ${seedFlagPath}
           '';
           WorkingDirectory = workDir;
-          Environment = [ releaseTmp ];
+          Environment = environment;
         };
       };
 
-      "${PhoenixService}" = {
+      "${envReleaseName}" = {
         inherit path;
         wantedBy = [ "multi-user.target" ];
         # enable = true;
@@ -130,21 +136,16 @@ let
         };
         serviceConfig = {
           Type = "exec";
-          ExecStart = "${release}/bin/${envReleaseName} start";
-          ExecStop = "${release}/bin/${envReleaseName} stop";
-          ExecReload = "${release}/bin/${envReleaseName} reload";
+          ExecStart = "${release}/bin/${appName} start";
+          ExecStop = "${release}/bin/${appName} stop";
+          ExecReload = "${release}/bin/${appName} reload";
           User = envReleaseName;
           Group = "users";
           Restart = "on-failure";
           RestartSec = 5;
           StartLimitBurst = 3;
           WorkingDirectory = workDir;
-          Environment = [
-            "PORT=${port}"
-            "SECRET_KEY_BASE=${envConfig.secretKeyBase}"
-            releaseTmp
-            "RELEASE_COOKIE=${envConfig.releaseCookie}"
-          ];
+          Environment = environment;
         };
       };
     };
