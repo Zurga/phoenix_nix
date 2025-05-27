@@ -14,6 +14,27 @@ This will include the `phoenix.nix` and make the `services.my-app` module availa
   appName = "CHANGE ME";
 ```
 
+### Change `config/runtime.exs` 
+Phoenix_nix assumes that the database is setup using a UNIX socket. The Repo setup in `config/runtime.exs` should be similar to this:
+```
+...
+if config_env() == :prod do
+  database =
+    System.get_env("DATABASE") ||
+      raise """
+      environment variable DATABASE is missing.
+      For example: my_database
+      """
+
+  config :phoenix_test, PhoenixTest.Repo,
+    hostname: "/run/postgresql",
+    port: 5432,
+    socket_dir: "/run/postgresql",
+    database: database,
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+...
+```
+
 ### Configuring the environments
 Let's assume that the Phoenix app is called `phoenix-test`, in your `configuration.nix` you can now add the following:
 ```
