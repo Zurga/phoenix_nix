@@ -156,12 +156,10 @@ runtimePackages = mkOption {
 };
 seedCommand = mkOption {
   type = types.str;
-  default = "${appName}.Release.seed";
   description = "The command to run when seeding the database";
 };
 migrateCommand = mkOption {
   type = types.str;
-  default = "${appName}.Release.migrate";
   description = "The command to run when migrating the database";
 };
 in {
@@ -170,19 +168,19 @@ in {
       inherit seedCommand migrateCommand runtimePackages;
       enable = mkEnableOption "${release.pname} service";
       environments = mkOption {
-        type = attrsOf (submodule {
+        type = attrsOf (submodule ({ name, ...}: {
           options = {
-            inherit seedCommand migrateCommand runtimePackages;
+            enable = mkEnableOption "${name} service";
+            host = mkOption {
+              type = str;
+              description = "The host for this environment";
+            };
             port = mkOption {
               type = port;
               default = 4000;
               description = "The port on which this service will listen";
             };
             ssl = mkEnableOption "Whether to use SSL or not";
-            host = mkOption {
-              type = str;
-              description = "The host for this environment";
-            };
             branch = mkOption {
               type = str;
               description = "The branch to use for this environment, will default to the environment name";
@@ -192,6 +190,9 @@ in {
               default = "";
               description = "The commit to deploy for this environment";
             };
+            seedCommand = seedCommand // { default = config.services."${appName}".seedCommand; };
+            migrateCommand = migrateCommand // { default = config.services."${appName}".migrateCommand; };
+            runtimePackages = runtimePackages // { default = config.services."${appName}".runtimePackages; };
             secretKeyBase = mkOption {
               type = str;
               default = "YOUR_SUPER_SECRET_KEYBASE_THAT_YOU_SHOULD_CHANGE";
@@ -203,7 +204,7 @@ in {
               description = "Release cookie to use with Phoenix";
             };
           };
-        });
+        }));
       };
     };
   services = applyConfig serviceDescription;

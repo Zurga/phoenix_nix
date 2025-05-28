@@ -15,8 +15,8 @@ in
             host = "localhost";
             ssl = false;
             port = 5000;
-            migrateCommand = "PhoenixTest.Release.migrate";
-            seedCommand = "PhoenixTest.Release.seed";
+            # migrateCommand = "PhoenixTest.Release.migrate";
+            # seedCommand = "PhoenixTest.Release.seed";
             runtimePackages = with pkgs; [curl];
           };
         };
