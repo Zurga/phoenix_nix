@@ -76,6 +76,7 @@ let
       ];
       release = pkgs.callPackage package {
         inherit lib;
+        host = envConfig.host;
         branch = env;
         appName = envReleaseName;
         commit = envConfig.commit;
