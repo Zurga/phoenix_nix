@@ -66,6 +66,8 @@ let
       migrationService =  "${envReleaseName}_migration.service";
       path = [ pkgs.bash ] ++ (if envConfig.runtimePackages != [] then envConfig.runtimePackages else cfg.runtimePackages );
       environment = [
+        "PHX_SERVER=true"
+        "PHX_HOST=${envConfig.host}"
         "DATABASE=${envReleaseName}"
         "PORT=${port}"
         "SECRET_KEY_BASE=${envConfig.secretKeyBase}"
