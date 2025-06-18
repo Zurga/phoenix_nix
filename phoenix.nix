@@ -30,7 +30,7 @@ let
             };
             "/uploads/" = { alias = "${workingDirectory env}/uploads/"; };
           };
-        };
+        } // envConfig.nginxHostsOptions;
       };
     };
 
@@ -165,10 +165,15 @@ migrateCommand = mkOption {
   type = types.str;
   description = "The command to run when migrating the database";
 };
+nginxHostsOptions = mkOption {
+  type = types.attrs;
+  description = "Extra options to pass into the nginx virtualHost configuration";
+  default = {};
+};
 in {
   options = appName:
     with types; {
-      inherit seedCommand migrateCommand runtimePackages;
+      inherit seedCommand migrateCommand runtimePackages nginxHostsOptions;
       enable = mkEnableOption "${release.pname} service";
       environments = mkOption {
         type = attrsOf (submodule ({ name, ...}: {
@@ -196,6 +201,7 @@ in {
             seedCommand = seedCommand // { default = config.services."${appName}".seedCommand; };
             migrateCommand = migrateCommand // { default = config.services."${appName}".migrateCommand; };
             runtimePackages = runtimePackages // { default = config.services."${appName}".runtimePackages; };
+            nginxHostsOptions = nginxHostsOptions // { default = config.services."${appName}".nginxHostsOptions; };
             secretKeyBase = mkOption {
               type = str;
               default = "YOUR_SUPER_SECRET_KEYBASE_THAT_YOU_SHOULD_CHANGE";
