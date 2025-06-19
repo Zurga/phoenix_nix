@@ -30,6 +30,7 @@ let
             };
             "/uploads/" = { alias = "${workingDirectory env}/uploads/"; };
           };
+          serverAliases = envConfig.serverAliases;
         } // envConfig.nginxHostsOptions;
       };
     };
@@ -68,6 +69,7 @@ let
       environment = [
         "PHX_SERVER=true"
         "PHX_HOST=${envConfig.host}"
+        "PHX_SERVER_ALIASES=${lib.concatStringsSep "," envConfig.serverAliases}"
         "DATABASE=${envReleaseName}"
         "PORT=${port}"
         "SECRET_KEY_BASE=${envConfig.secretKeyBase}"
@@ -211,6 +213,11 @@ in {
               type = str;
               default = "YOUR_SUPER_SECRET_COOKIE_THAT_YOU_SHOULD_CHANGE";
               description = "Release cookie to use with Phoenix";
+            };
+            serverAliases = mkOption {
+              type = listOf str;
+              default = [];
+              description = "Server aliases to use for your deployment";
             };
           };
         }));
